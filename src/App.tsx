@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Heart } from "lucide-react";
 import coryChomp from "./assets/cory_chomp.png";
 import coryDefault from "./assets/cory_default.png";
@@ -35,16 +35,21 @@ const Game = () => {
 	const [highScore, setHighScore] = useState(0);
 	const [health, setHealth] = useState(3);
 	const [timeLeft, setTimeLeft] = useState(90);
-	const [items, setItems] = useState([]);
+	const [items, setItems] = useState<GameItem[]>([]);
 	const [playerPosition, setPlayerPosition] = useState(50);
 	const [isChomping, setIsChomping] = useState(false);
-	const [splatters, setSplatters] = useState([]); // State for splatters
+	const [splatters, setSplatters] = useState<Splatter[]>([]); // State for splatters
 
-	const gameAreaRef = useRef(null);
-	const animationFrameRef = useRef();
+	const gameAreaRef = useRef<HTMLDivElement>(null);
+	const animationFrameRef = useRef<number | null>(null);
 	const lastSpawnTime = useRef(0);
 
-	const audioRef = useRef({
+	const audioRef = useRef<{
+		munch: HTMLAudioElement | null;
+		gameOver: HTMLAudioElement | null;
+		ow: HTMLAudioElement | null;
+		fart: HTMLAudioElement | null;
+	}>({
 		munch: null,
 		gameOver: null,
 		ow: null,
@@ -71,7 +76,7 @@ const Game = () => {
 		};
 	}, []);
 
-	const playSound = (type) => {
+	const playSound = (type: "munch" | "gameOver" | "ow" | "fart") => {
 		const audio = audioRef.current[type];
 		if (audio) {
 			audio.currentTime = 0;
@@ -88,16 +93,33 @@ const Game = () => {
 		setSplatters([]); // Clear splatters when starting a new game
 	};
 
-	const endGame = () => {
+	const endGame = useCallback(() => {
 		setGameState("ended");
 		if (score > highScore) {
 			setHighScore(score);
 			localStorage.setItem("chomperHighScore", score.toString());
 		}
-	};
+	}, [score, highScore]);
 
-	const handleCollision = (item) => {
-		if (hazards.includes(item.type)) {
+	interface ItemType {
+		id: string;
+		src: string;
+	}
+
+	interface GameItem {
+		id: number;
+		x: number;
+		y: number;
+		type: ItemType;
+	}
+
+	interface Splatter {
+		x: number;
+		y: number;
+	}
+
+	const handleCollision = (item: GameItem) => {
+		if (hazards.some((hazard) => hazard.id === item.type.id)) {
 			playSound("ow");
 			setHealth((prev) => {
 				if (prev <= 1) {
@@ -114,9 +136,9 @@ const Game = () => {
 		}
 	};
 
-	const handleImageClick = (e) => {
+	const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
 		playSound("fart");
-		const rect = e.target.getBoundingClientRect();
+		const rect = (e.target as HTMLImageElement).getBoundingClientRect();
 		const x = e.clientX - rect.left;
 		const y = e.clientY - rect.top;
 
@@ -131,7 +153,7 @@ const Game = () => {
 	useEffect(() => {
 		if (gameState !== "playing") return;
 
-		const gameLoop = (timestamp) => {
+		const gameLoop = (timestamp: number) => {
 			if (timestamp - lastSpawnTime.current > 1000) {
 				const newItem = {
 					id: Date.now(),
@@ -181,7 +203,11 @@ const Game = () => {
 		};
 
 		animationFrameRef.current = requestAnimationFrame(gameLoop);
-		return () => cancelAnimationFrame(animationFrameRef.current);
+		return () => {
+			if (animationFrameRef.current !== null) {
+				cancelAnimationFrame(animationFrameRef.current);
+			}
+		};
 	}, [gameState, playerPosition]);
 
 	useEffect(() => {
@@ -198,14 +224,16 @@ const Game = () => {
 		}, 1000);
 
 		return () => clearInterval(timer);
-	}, [gameState]);
+	}, [gameState, endGame]);
 
 	useEffect(() => {
-		const handleMouseMove = (e) => {
+		const handleMouseMove = (e: MouseEvent) => {
 			if (gameState !== "playing") return;
-			const rect = gameAreaRef.current.getBoundingClientRect();
-			const x = ((e.clientX - rect.left) / rect.width) * 100;
-			setPlayerPosition(Math.max(7.5, Math.min(92.5, x)));
+			if (gameAreaRef.current) {
+				const rect = gameAreaRef.current.getBoundingClientRect();
+				const x = ((e.clientX - rect.left) / rect.width) * 100;
+				setPlayerPosition(Math.max(7.5, Math.min(92.5, x)));
+			}
 		};
 
 		window.addEventListener("mousemove", handleMouseMove);
